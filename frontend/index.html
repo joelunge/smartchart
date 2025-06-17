@@ -21,26 +21,25 @@
 
     <div id="chart"></div>
 
-    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-    <script>
-        const chart = LightweightCharts.createChart(document.getElementById('chart'));
-        const candlestickSeries = chart.addCandlestickSeries();
+    <script type="module">
+import { createChart } from 'https://unpkg.com/lightweight-charts/dist/lightweight-charts.esm.development.js';
 
-        async function loadData(tf) {
-            try {
-                const resp = await fetch(`http://localhost:5000/api/candles?symbol=BTCUSDT&tf=${tf}`);
-                if (!resp.ok) throw new Error('Failed to load data');
-                const data = await resp.json();
-                if (!data.length) { alert('No data returned'); return; }
-                candlestickSeries.setData(data);
-            } catch (err) {
-                alert(err.message);
-            }
-        }
+const chart  = createChart(document.getElementById('chart'), { height: 600 });
+const series = chart.addCandlestickSeries();
+const tfSel  = document.getElementById('tf');
+const BASE   = 'http://localhost:5000';
 
-        const select = document.getElementById('tf');
-        select.addEventListener('change', () => loadData(select.value));
-        loadData(select.value);
+async function load(tf) {
+  const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
+  console.log('fetch', url);
+  const res  = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  series.setData(data);
+}
+
+tfSel.addEventListener('change', () => load(tfSel.value));
+load(tfSel.value);
     </script>
 </body>
 </html>

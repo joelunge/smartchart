@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SmartChart</title>
+    <link rel="stylesheet" href="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.css">
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 1rem; }
+        #chart { height: 600px; }
+    </style>
+</head>
+<body>
+    <label for="tf">Timeframe:</label>
+    <select id="tf">
+        <option value="1m">1m</option>
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="1h">1h</option>
+        <option value="4h">4h</option>
+    </select>
+
+    <div id="chart"></div>
+
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script>
+        const chart = LightweightCharts.createChart(document.getElementById('chart'));
+        const candlestickSeries = chart.addCandlestickSeries();
+
+        async function loadData(tf) {
+            try {
+                const resp = await fetch(`http://localhost:5000/api/candles?symbol=BTCUSDT&tf=${tf}`);
+                if (!resp.ok) throw new Error('Failed to load data');
+                const data = await resp.json();
+                if (!data.length) { alert('No data returned'); return; }
+                candlestickSeries.setData(data);
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        const select = document.getElementById('tf');
+        select.addEventListener('change', () => loadData(select.value));
+        loadData(select.value);
+    </script>
+</body>
+</html>

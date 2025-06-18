@@ -18,3 +18,15 @@ cd frontend
 python -m http.server 8000
 # or open index.html directly in the browser
 ```
+
+## Starta
+1. backend `$ python app.py`
+2. frontend `$ python -m http.server 8000`
+Öppna http://localhost:8000  → grafen visas.
+
+### Ladda ner biblioteket
+Kör i projektroten:
+```bash
+curl -L -o frontend/lightweight-charts.js \
+  https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.7/dist/lightweight-charts.standalone.production.js
+```

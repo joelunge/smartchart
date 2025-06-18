@@ -21,25 +21,25 @@
 
     <div id="chart"></div>
 
-    <script type="module">
-import { createChart } from
-  'https://cdn.jsdelivr.net/npm/lightweight-charts@4.3.0/dist/lightweight-charts.esm.js';
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.3.0/dist/lightweight-charts.standalone.production.js"></script>
 
-const chart  = createChart(document.getElementById('chart'), { height: 600 });
-const series = chart.addCandlestickSeries();
-const tfSel  = document.getElementById('tf');
-const BASE   = 'http://localhost:5000';
+    <script>
+  // nu finns globala objektet LightweightCharts
+  const chart  = LightweightCharts.createChart(document.getElementById('chart'), { height: 600 });
+  const series = chart.addCandlestickSeries();
+  const tfSel  = document.getElementById('tf');
+  const BASE   = 'http://localhost:5000';
 
-async function load(tf) {
-  const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  series.setData(data);
-}
+  async function load(tf) {
+    const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    series.setData(data);
+  }
 
-tfSel.addEventListener('change', () => load(tfSel.value));
-load(tfSel.value);
+  tfSel.addEventListener('change', () => load(tfSel.value));
+  load(tfSel.value);         // initial laddning
     </script>
 </body>
 </html>

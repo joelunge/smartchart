@@ -1,1 +1,120 @@
-Hello crazy world!
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartChart - BTCUSDT</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #1e222d;
+            color: #d1d4dc;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            font-weight: 500;
+        }
+        #chart {
+            width: 100%;
+            height: 600px;
+            background-color: #131722;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #6c7380;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BTCUSDT - 5 min</h1>
+        <div id="chart">
+            <div class="loading">Laddar graf...</div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script>
+        async function loadChart() {
+            try {
+                // Hämta data från API
+                const response = await fetch('http://localhost:8000/api/candles/BTCUSDT?timeframe=5m');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error || 'Kunde inte hämta data');
+                }
+                
+                // Skapa chart
+                const chartContainer = document.getElementById('chart');
+                chartContainer.innerHTML = ''; // Rensa loading text
+                
+                const chart = window.LightweightCharts.createChart(chartContainer, {
+                    width: chartContainer.clientWidth,
+                    height: 600,
+                    layout: {
+                        background: { color: '#131722' },
+                        textColor: '#d1d4dc',
+                    },
+                    grid: {
+                        vertLines: { color: '#2a2e39' },
+                        horzLines: { color: '#2a2e39' },
+                    },
+                    crosshair: {
+                        mode: window.LightweightCharts.CrosshairMode.Normal,
+                    },
+                    rightPriceScale: {
+                        borderColor: '#2a2e39',
+                    },
+                    timeScale: {
+                        borderColor: '#2a2e39',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                });
+                
+                // Skapa candlestick series
+                const candleSeries = chart.addCandlestickSeries({
+                    upColor: '#26a69a',
+                    downColor: '#ef5350',
+                    borderVisible: false,
+                    wickUpColor: '#26a69a',
+                    wickDownColor: '#ef5350',
+                });
+                
+                // Lägg till data
+                candleSeries.setData(result.data);
+                
+                // Anpassa vyn
+                chart.timeScale().fitContent();
+                
+                // Hantera resize
+                window.addEventListener('resize', () => {
+                    chart.resize(chartContainer.clientWidth, 600);
+                });
+                
+                console.log(`Laddat ${result.count} ljus för BTCUSDT`);
+                
+            } catch (error) {
+                console.error('Fel vid laddning av graf:', error);
+                document.getElementById('chart').innerHTML = 
+                    '<div class="loading">Fel: ' + error.message + '</div>';
+            }
+        }
+        
+        // Ladda chart när sidan laddats
+        document.addEventListener('DOMContentLoaded', loadChart);
+    </script>
+</body>
+</html>

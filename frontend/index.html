@@ -1,47 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>SmartChart MVP-0</title>
   <style>
-    body { margin:0; font-family:Arial, sans-serif; }
-    #toolbar { padding:8px }
-    #chart   { height:600px }
+    body{margin:0;font-family:Arial,sans-serif}
+    #toolbar{padding:8px}
+    #chart{height:600px}
   </style>
 </head>
 <body>
   <div id="toolbar">
     Timeframe:
     <select id="tf">
-      <option value="1m">1m</option>
-      <option value="5m">5m</option>
-      <option value="15m">15m</option>
-      <option value="1h">1h</option>
+      <option value="1m">1m</option><option value="5m">5m</option>
+      <option value="15m">15m</option><option value="1h">1h</option>
       <option value="4h">4h</option>
     </select>
   </div>
 
   <div id="chart"></div>
 
-  <!-- ① Lokal JS-fil – ingen CDN-risk -->
+  <!-- ① lokalt nedladdad UMD-build (ca 240 kB) -->
   <script src="lightweight-charts.js"></script>
 
-  <!-- ② Vår logik – ligger EFTER biblioteket  -->
+  <!-- ② vår graf-logik -->
   <script>
-    const chart  = LightweightCharts.createChart(document.getElementById('chart'), { height: 600 });
+    const chart  = LightweightCharts.createChart(document.getElementById('chart'), {height:600});
     const series = chart.addCandlestickSeries();
     const tfSel  = document.getElementById('tf');
     const BASE   = 'http://localhost:5000';
 
-    async function load(tf) {
-      const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
-      const res = await fetch(url);
-      if (!res.ok) { alert(`API fel ${res.status}`); return; }
+    async function load(tf){
+      const res = await fetch(`${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`);
+      if(!res.ok){alert('API-fel '+res.status);return;}
       series.setData(await res.json());
     }
-
-    tfSel.addEventListener('change', () => load(tfSel.value));
-    load(tfSel.value);          // initial
+    tfSel.addEventListener('change',()=>load(tfSel.value));
+    load(tfSel.value);
   </script>
 </body>
 </html>
+

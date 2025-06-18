@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>SmartChart</title>
-    <link rel="stylesheet" href="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.css">
     <style>
         body { font-family: sans-serif; margin: 0; padding: 1rem; }
         #chart { height: 600px; }
@@ -21,25 +20,21 @@
 
     <div id="chart"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.3.0/dist/lightweight-charts.standalone.production.js"></script>
-
+    <script src="lightweight-charts.js"></script>
     <script>
-  // nu finns globala objektet LightweightCharts
-  const chart  = LightweightCharts.createChart(document.getElementById('chart'), { height: 600 });
-  const series = chart.addCandlestickSeries();
-  const tfSel  = document.getElementById('tf');
-  const BASE   = 'http://localhost:5000';
+        const chart  = LightweightCharts.createChart(document.getElementById('chart'), { height: 600 });
+        const series = chart.addCandlestickSeries();
+        const tfSel  = document.getElementById('tf');
+        const BASE   = 'http://localhost:5000';
 
-  async function load(tf) {
-    const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    series.setData(data);
-  }
-
-  tfSel.addEventListener('change', () => load(tfSel.value));
-  load(tfSel.value);         // initial laddning
+        async function load(tf) {
+            const url = `${BASE}/api/candles?symbol=BTCUSDT&tf=${tf}&limit=500`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            series.setData(await res.json());
+        }
+        tfSel.addEventListener('change', () => load(tfSel.value));
+        load(tfSel.value);
     </script>
 </body>
 </html>

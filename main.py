@@ -132,19 +132,48 @@ async def test_db():
 
 @app.get("/api/symbols")
 async def get_symbols():
-    """Hämta alla tillgängliga symboler"""
+    """Hämta alla symboler med senaste pris och volym från candlesd"""
+    import time
+    start_time = time.time()
+    
     try:
+        print("Starting symbols API call...")
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Tillbaka till enkel query från candlesd som fungerade
+        print("Getting latest data from candlesd...")
+        cursor.execute("SELECT MAX(startTime) as max_date FROM candlesd")
+        max_date = cursor.fetchone()['max_date']
+        print(f"Max date: {max_date} (took {time.time() - start_time:.2f}s)")
+        
+        # Hämta alla symboler från senaste dagen
         query = """
-        SELECT id, symbol
-        FROM symbols
-        ORDER BY symbol
+        SELECT 
+            symbol,
+            closePrice as price,
+            turnover as volume_24h_usdt,
+            ((closePrice - openPrice) / openPrice * 100) as change_24h
+        FROM candlesd
+        WHERE startTime = %s
+        AND turnover > 0
+        ORDER BY turnover DESC
         """
         
-        cursor.execute(query)
-        symbols = cursor.fetchall()
+        print("Fetching symbols...")
+        cursor.execute(query, (max_date,))
+        result = cursor.fetchall()
+        print(f"Got {len(result)} symbols (took {time.time() - start_time:.2f}s total)")
+        
+        # Formatera resultatet
+        symbols = []
+        for row in result:
+            symbols.append({
+                'symbol': row['symbol'],
+                'price': float(row['price']),
+                'change_24h': float(row['change_24h']) if row['change_24h'] else 0,
+                'volume_24h_usdt': float(row['volume_24h_usdt']) if row['volume_24h_usdt'] else 0
+            })
         
         cursor.close()
         conn.close()

@@ -11,20 +11,105 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #1e222d;
             color: #d1d4dc;
+            height: 100vh;
+            overflow: hidden;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 280px;
+            background-color: #131722;
+            border-right: 1px solid #2a2e39;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #2a2e39;
+        }
+        .sidebar-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .search-container {
+            padding: 12px;
+            border-bottom: 1px solid #2a2e39;
+        }
+        .search-input {
+            width: 100%;
+            background-color: #2a2e39;
+            border: 1px solid #3a3f4b;
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #d1d4dc;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .search-input::placeholder {
+            color: #6c7380;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        .symbol-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .symbol-item {
+            padding: 10px 16px;
+            border-bottom: 1px solid #2a2e39;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+        .symbol-item:hover {
+            background-color: #2a2e39;
+        }
+        .symbol-item.active {
+            background-color: #3a3f4b;
+        }
+        .symbol-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .symbol-price {
+            text-align: right;
+        }
+        .symbol-price-value {
+            font-size: 13px;
+            margin-bottom: 2px;
+        }
+        .symbol-price-change {
+            font-size: 11px;
+        }
+        .symbol-price-change.positive {
+            color: #26a69a;
+        }
+        .symbol-price-change.negative {
+            color: #ef5350;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             padding: 20px;
         }
+        .header {
+            margin-bottom: 20px;
+        }
         h1 {
-            margin: 0 0 20px 0;
+            margin: 0;
             font-size: 24px;
             font-weight: 500;
         }
         #chart {
-            width: 100%;
-            height: 600px;
+            flex: 1;
             background-color: #131722;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -37,32 +122,134 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>BTCUSDT - 5 min</h1>
-        <div id="chart">
-            <div class="loading">Laddar graf...</div>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>Trading Pairs</h3>
+            </div>
+            <div class="search-container">
+                <input type="text" id="symbol-search" placeholder="Search..." class="search-input">
+            </div>
+            <div class="symbol-list" id="symbol-list">
+                <!-- Symboler laddas här dynamiskt -->
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="header">
+                <h1 id="chart-title">BTCUSDT - 5 min</h1>
+            </div>
+            <div id="chart">
+                <div class="loading">Laddar graf...</div>
+            </div>
         </div>
     </div>
 
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script>
+        let currentChart = null;
+        let currentSymbol = 'BTCUSDT';
+        let currentTimeframe = '5m';
+        
+        let allSymbols = [];
+        
+        async function loadSymbols() {
+            try {
+                const response = await fetch('http://localhost:8000/api/symbols');
+                const result = await response.json();
+                
+                if (result.success) {
+                    allSymbols = result.symbols;
+                    renderSymbolList(allSymbols);
+                    
+                    // Lägg till sökfunktionalitet
+                    const searchInput = document.getElementById('symbol-search');
+                    searchInput.addEventListener('input', (e) => {
+                        const searchTerm = e.target.value.toLowerCase();
+                        const filtered = allSymbols.filter(symbolData => 
+                            symbolData.symbol.toLowerCase().includes(searchTerm)
+                        );
+                        renderSymbolList(filtered);
+                    });
+                }
+            } catch (error) {
+                console.error('Fel vid laddning av symboler:', error);
+            }
+        }
+        
+        function formatPrice(price) {
+            if (price >= 1) {
+                return price.toFixed(2);
+            } else if (price >= 0.01) {
+                return price.toFixed(4);
+            } else {
+                return price.toFixed(6);
+            }
+        }
+        
+        function formatChange(change) {
+            const sign = change >= 0 ? '+' : '';
+            return sign + change.toFixed(2) + '%';
+        }
+        
+        function renderSymbolList(symbols) {
+            const symbolList = document.getElementById('symbol-list');
+            symbolList.innerHTML = '';
+            
+            symbols.forEach(symbolData => {
+                const item = document.createElement('div');
+                item.className = 'symbol-item';
+                if (symbolData.symbol === currentSymbol) {
+                    item.classList.add('active');
+                }
+                
+                const changeClass = symbolData.change_24h >= 0 ? 'positive' : 'negative';
+                
+                item.innerHTML = `
+                    <div class="symbol-name">${symbolData.symbol}</div>
+                    <div class="symbol-price">
+                        <div class="symbol-price-value">${formatPrice(symbolData.price)}</div>
+                        <div class="symbol-price-change ${changeClass}">${formatChange(symbolData.change_24h)}</div>
+                    </div>
+                `;
+                
+                item.addEventListener('click', () => {
+                    // Ta bort active från alla
+                    document.querySelectorAll('.symbol-item').forEach(el => 
+                        el.classList.remove('active')
+                    );
+                    // Lägg till active på denna
+                    item.classList.add('active');
+                    
+                    currentSymbol = symbolData.symbol;
+                    loadChart();
+                });
+                
+                symbolList.appendChild(item);
+            });
+        }
+
         async function loadChart() {
             try {
+                // Uppdatera titel
+                document.getElementById('chart-title').textContent = `${currentSymbol} - ${currentTimeframe}`;
+                
                 // Hämta data från API
-                const response = await fetch('http://localhost:8000/api/candles/BTCUSDT?timeframe=5m');
+                const response = await fetch(`http://localhost:8000/api/candles/${currentSymbol}?timeframe=${currentTimeframe}`);
                 const result = await response.json();
                 
                 if (!result.success) {
                     throw new Error(result.error || 'Kunde inte hämta data');
                 }
                 
-                // Skapa chart
+                // Skapa chart (eller återanvänd befintlig)
                 const chartContainer = document.getElementById('chart');
-                chartContainer.innerHTML = ''; // Rensa loading text
                 
-                const chart = window.LightweightCharts.createChart(chartContainer, {
+                if (!currentChart) {
+                    chartContainer.innerHTML = ''; // Rensa loading text bara första gången
+                    
+                    currentChart = window.LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth,
-                    height: 600,
+                    height: chartContainer.clientHeight,
                     layout: {
                         background: { color: '#131722' },
                         textColor: '#d1d4dc',
@@ -82,27 +269,28 @@
                         timeVisible: true,
                         secondsVisible: false,
                     },
-                });
+                    });
+                    
+                    // Skapa candlestick series
+                    window.candleSeries = currentChart.addCandlestickSeries({
+                        upColor: '#26a69a',
+                        downColor: '#ef5350',
+                        borderVisible: false,
+                        wickUpColor: '#26a69a',
+                        wickDownColor: '#ef5350',
+                    });
+                    
+                    // Hantera resize
+                    window.addEventListener('resize', () => {
+                        currentChart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
+                    });
+                }
                 
-                // Skapa candlestick series
-                const candleSeries = chart.addCandlestickSeries({
-                    upColor: '#26a69a',
-                    downColor: '#ef5350',
-                    borderVisible: false,
-                    wickUpColor: '#26a69a',
-                    wickDownColor: '#ef5350',
-                });
-                
-                // Lägg till data
-                candleSeries.setData(result.data);
+                // Lägg till data (fungerar för både ny och befintlig graf)
+                window.candleSeries.setData(result.data);
                 
                 // Anpassa vyn
-                chart.timeScale().fitContent();
-                
-                // Hantera resize
-                window.addEventListener('resize', () => {
-                    chart.resize(chartContainer.clientWidth, 600);
-                });
+                currentChart.timeScale().fitContent();
                 
                 console.log(`Laddat ${result.count} ljus för BTCUSDT`);
                 
@@ -113,8 +301,11 @@
             }
         }
         
-        // Ladda chart när sidan laddats
-        document.addEventListener('DOMContentLoaded', loadChart);
+        // Ladda symboler och chart när sidan laddats
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadSymbols();
+            await loadChart();
+        });
     </script>
 </body>
 </html>

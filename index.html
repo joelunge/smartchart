@@ -102,11 +102,35 @@
         }
         .header {
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         h1 {
             margin: 0;
             font-size: 24px;
             font-weight: 500;
+        }
+        .timeframe-selector {
+            display: flex;
+            gap: 8px;
+        }
+        .tf-btn {
+            background-color: #2a2e39;
+            color: #d1d4dc;
+            border: 1px solid #3a3f4b;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tf-btn:hover {
+            background-color: #3a3f4b;
+        }
+        .tf-btn.active {
+            background-color: #4a90e2;
+            border-color: #4a90e2;
         }
         #chart {
             flex: 1;
@@ -118,6 +142,25 @@
             text-align: center;
             padding: 50px;
             color: #6c7380;
+        }
+        
+        /* Custom scrollbar - diskret design */
+        .symbol-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .symbol-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .symbol-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            transition: background 0.2s;
+        }
+        
+        .symbol-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
         }
     </style>
 </head>
@@ -137,6 +180,15 @@
         <div class="main-content">
             <div class="header">
                 <h1 id="chart-title">BTCUSDT - 5 min</h1>
+                <div class="timeframe-selector">
+                    <button class="tf-btn" data-tf="1">1m</button>
+                    <button class="tf-btn active" data-tf="5">5m</button>
+                    <button class="tf-btn" data-tf="15">15m</button>
+                    <button class="tf-btn" data-tf="60">1h</button>
+                    <button class="tf-btn" data-tf="240">4h</button>
+                    <button class="tf-btn" data-tf="D">1D</button>
+                    <button class="tf-btn" data-tf="W">1W</button>
+                </div>
             </div>
             <div id="chart">
                 <div class="loading">Laddar graf...</div>
@@ -148,9 +200,20 @@
     <script>
         let currentChart = null;
         let currentSymbol = 'BTCUSDT';
-        let currentTimeframe = '5m';
+        let currentTimeframe = '5';
         
         let allSymbols = [];
+        
+        // Timeframe mappning
+        const timeframeMap = {
+            '1': '1m',
+            '5': '5m',
+            '15': '15m',
+            '60': '1h',
+            '240': '4h',
+            'D': '1D',
+            'W': '1W'
+        };
         
         async function loadSymbols() {
             try {
@@ -231,10 +294,15 @@
         async function loadChart() {
             try {
                 // Uppdatera titel
-                document.getElementById('chart-title').textContent = `${currentSymbol} - ${currentTimeframe}`;
+                document.getElementById('chart-title').textContent = `${currentSymbol} - ${timeframeMap[currentTimeframe]}`;
+                
+                // Visa loading
+                if (!currentChart) {
+                    document.getElementById('chart').innerHTML = '<div class="loading">Laddar graf...</div>';
+                }
                 
                 // Hämta data från API
-                const response = await fetch(`http://localhost:8000/api/candles/${currentSymbol}?timeframe=${currentTimeframe}`);
+                const response = await fetch(`http://localhost:8000/api/candles/${currentSymbol}?timeframe=${currentTimeframe}&limit=20000`);
                 const result = await response.json();
                 
                 if (!result.success) {
@@ -305,6 +373,20 @@
         document.addEventListener('DOMContentLoaded', async () => {
             await loadSymbols();
             await loadChart();
+            
+            // Lägg till timeframe event listeners
+            document.querySelectorAll('.tf-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    // Ta bort active från alla
+                    document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+                    // Lägg till active på denna
+                    e.target.classList.add('active');
+                    
+                    // Uppdatera timeframe och ladda om
+                    currentTimeframe = e.target.dataset.tf;
+                    loadChart();
+                });
+            });
         });
     </script>
 </body>

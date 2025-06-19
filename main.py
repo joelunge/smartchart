@@ -25,7 +25,7 @@ app.add_middleware(
 DB_CONFIG = {
     'host': 'localhost',
     'port': 3306,  # Standard MySQL port
-    'database': 'sct_2024',
+    'database': 'smartchart',  # Ny dedikerad databas
     'user': 'root',
     'password': 'root',
     'charset': 'utf8mb4'
@@ -36,78 +36,68 @@ def get_db_connection():
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 @app.get("/api/candles/{symbol}")
-async def get_candles(symbol: str, timeframe: str = "5m", limit: int = 1000):
-    """Hämta candlestick data för en symbol"""
-    
-    # Välj rätt tabell baserat på timeframe
-    table_map = {
-        "5m": "candles5",
-        "15m": "candles15",
-        "1h": "candles60",
-        "1d": "candlesd"
-    }
-    
-    if timeframe not in table_map:
-        raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
-    
-    table = table_map[timeframe]
+async def get_candles(symbol: str, timeframe: str = "5", limit: int = 20000):
+    """Hämta candlestick data - laddar automatiskt om data saknas"""
     
     try:
-        print(f"Fetching candles for {symbol}, timeframe={timeframe}, table={table}")
+        # Importera här för att undvika cirkulära imports
+        from kline_fetcher import ensure_klines_available
+        
+        # Säkerställ att vi har ALL tillgänglig data
+        print(f"Checking data availability for {symbol} ({timeframe}m)...")
+        # fetch_all_history=True betyder att vi hämtar ALL historik bakåt i tiden
+        ensure_klines_available(symbol, timeframe, min_candles=limit, fetch_all_history=True)
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Först, kontrollera om tabellen och data finns
-        cursor.execute(f"SELECT COUNT(*) as count FROM {table} WHERE symbol = %s", (symbol,))
-        count_result = cursor.fetchone()
-        print(f"Found {count_result['count']} rows for symbol={symbol}")
-        
-        query = f"""
+        # Hämta från klines tabell
+        query = """
         SELECT 
-            UNIX_TIMESTAMP(startTime) as time,
-            openPrice as open,
-            highPrice as high,
-            lowPrice as low,
-            closePrice as close,
+            open_time / 1000 as time,
+            open,
+            high,
+            low,
+            close,
             volume
-        FROM {table}
-        WHERE symbol = %s
-        ORDER BY startTime DESC
+        FROM klines
+        WHERE symbol = %s 
+        AND timeframe = %s
+        ORDER BY open_time DESC
         LIMIT %s
         """
         
-        cursor.execute(query, (symbol, limit))
+        cursor.execute(query, (symbol, timeframe, limit))
         data = cursor.fetchall()
-        print(f"Fetched {len(data)} candles")
         
-        # Konvertera till rätt format och vänd ordningen
-        data = data[::-1]  # Äldsta först
+        # Vänd ordningen (äldsta först för TradingView)
+        data = data[::-1]
         
-        # Konvertera decimaler till float
+        # Konvertera till rätt format
+        formatted_data = []
         for candle in data:
-            candle['time'] = int(candle['time'])
-            candle['open'] = float(candle['open'])
-            candle['high'] = float(candle['high'])
-            candle['low'] = float(candle['low'])
-            candle['close'] = float(candle['close'])
-            candle['volume'] = float(candle['volume'])
+            formatted_data.append({
+                'time': int(candle['time']),
+                'open': float(candle['open']),
+                'high': float(candle['high']),
+                'low': float(candle['low']),
+                'close': float(candle['close']),
+                'volume': float(candle['volume'])
+            })
         
         cursor.close()
         conn.close()
         
         return {
             "success": True,
-            "data": data,
-            "count": len(data),
+            "data": formatted_data,
+            "count": len(formatted_data),
             "symbol": symbol,
-            "timeframe": timeframe
+            "timeframe": f"{timeframe}m"
         }
         
-    except pymysql.Error as e:
-        print(f"Database error: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     except Exception as e:
-        print(f"General error: {e}")
+        print(f"Error fetching candles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/test-db")
@@ -132,38 +122,25 @@ async def test_db():
 
 @app.get("/api/symbols")
 async def get_symbols():
-    """Hämta alla symboler med senaste pris och volym från candlesd"""
-    import time
-    start_time = time.time()
-    
+    """Hämta alla symboler med aktuell ticker data"""
     try:
-        print("Starting symbols API call...")
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Tillbaka till enkel query från candlesd som fungerade
-        print("Getting latest data from candlesd...")
-        cursor.execute("SELECT MAX(startTime) as max_date FROM candlesd")
-        max_date = cursor.fetchone()['max_date']
-        print(f"Max date: {max_date} (took {time.time() - start_time:.2f}s)")
-        
-        # Hämta alla symboler från senaste dagen
+        # Hämta direkt från tickers tabell
         query = """
         SELECT 
             symbol,
-            closePrice as price,
-            turnover as volume_24h_usdt,
-            ((closePrice - openPrice) / openPrice * 100) as change_24h
-        FROM candlesd
-        WHERE startTime = %s
-        AND turnover > 0
-        ORDER BY turnover DESC
+            lastPrice as price,
+            price24hPcnt * 100 as change_24h,
+            turnover24h as volume_24h_usdt
+        FROM tickers
+        WHERE turnover24h > 0
+        ORDER BY turnover24h DESC
         """
         
-        print("Fetching symbols...")
-        cursor.execute(query, (max_date,))
+        cursor.execute(query)
         result = cursor.fetchall()
-        print(f"Got {len(result)} symbols (took {time.time() - start_time:.2f}s total)")
         
         # Formatera resultatet
         symbols = []
@@ -171,8 +148,8 @@ async def get_symbols():
             symbols.append({
                 'symbol': row['symbol'],
                 'price': float(row['price']),
-                'change_24h': float(row['change_24h']) if row['change_24h'] else 0,
-                'volume_24h_usdt': float(row['volume_24h_usdt']) if row['volume_24h_usdt'] else 0
+                'change_24h': float(row['change_24h']),
+                'volume_24h_usdt': float(row['volume_24h_usdt'])
             })
         
         cursor.close()

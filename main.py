@@ -36,23 +36,32 @@ def get_db_connection():
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 @app.get("/api/candles/{symbol}")
-async def get_candles(symbol: str, timeframe: str = "5", limit: int = 20000):
-    """Hämta candlestick data - laddar automatiskt om data saknas"""
+async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
+    """Hämta candlestick data från rätt tabell baserat på timeframe"""
+    
+    # Mapping av timeframe till tabellnamn
+    timeframe_tables = {
+        '1': 'candles1',
+        '5': 'candles5',
+        '15': 'candles15',
+        '60': 'candles60',
+        '240': 'candles240',
+        'D': 'candlesd',
+        'W': 'candlesw'
+    }
+    
+    # Validera timeframe
+    if timeframe not in timeframe_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
+    
+    table_name = timeframe_tables[timeframe]
     
     try:
-        # Importera här för att undvika cirkulära imports
-        from kline_fetcher import ensure_klines_available
-        
-        # Säkerställ att vi har ALL tillgänglig data
-        print(f"Checking data availability for {symbol} ({timeframe}m)...")
-        # fetch_all_history=True betyder att vi hämtar ALL historik bakåt i tiden
-        ensure_klines_available(symbol, timeframe, min_candles=limit, fetch_all_history=True)
-        
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Hämta från klines tabell
-        query = """
+        # Hämta från rätt tabell
+        query = f"""
         SELECT 
             open_time / 1000 as time,
             open,
@@ -60,14 +69,13 @@ async def get_candles(symbol: str, timeframe: str = "5", limit: int = 20000):
             low,
             close,
             volume
-        FROM klines
-        WHERE symbol = %s 
-        AND timeframe = %s
+        FROM {table_name}
+        WHERE symbol = %s
         ORDER BY open_time DESC
         LIMIT %s
         """
         
-        cursor.execute(query, (symbol, timeframe, limit))
+        cursor.execute(query, (symbol, limit))
         data = cursor.fetchall()
         
         # Vänd ordningen (äldsta först för TradingView)
@@ -88,12 +96,21 @@ async def get_candles(symbol: str, timeframe: str = "5", limit: int = 20000):
         cursor.close()
         conn.close()
         
+        # Justera timeframe-visning för D och W
+        tf_display = timeframe
+        if timeframe == 'D':
+            tf_display = '1D'
+        elif timeframe == 'W':
+            tf_display = '1W'
+        elif timeframe not in ['D', 'W']:
+            tf_display = f"{timeframe}m"
+        
         return {
             "success": True,
             "data": formatted_data,
             "count": len(formatted_data),
             "symbol": symbol,
-            "timeframe": f"{timeframe}m"
+            "timeframe": tf_display
         }
         
     except Exception as e:

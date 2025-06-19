@@ -179,12 +179,12 @@
         </div>
         <div class="main-content">
             <div class="header">
-                <h1 id="chart-title">BTCUSDT - 5 min</h1>
+                <h1 id="chart-title">BTCUSDT - 1h</h1>
                 <div class="timeframe-selector">
                     <button class="tf-btn" data-tf="1">1m</button>
-                    <button class="tf-btn active" data-tf="5">5m</button>
+                    <button class="tf-btn" data-tf="5">5m</button>
                     <button class="tf-btn" data-tf="15">15m</button>
-                    <button class="tf-btn" data-tf="60">1h</button>
+                    <button class="tf-btn active" data-tf="60">1h</button>
                     <button class="tf-btn" data-tf="240">4h</button>
                     <button class="tf-btn" data-tf="D">1D</button>
                     <button class="tf-btn" data-tf="W">1W</button>
@@ -200,9 +200,15 @@
     <script>
         let currentChart = null;
         let currentSymbol = 'BTCUSDT';
-        let currentTimeframe = '5';
+        let currentTimeframe = '60';
         
         let allSymbols = [];
+        
+        // Spara zoom/position state
+        let chartState = {
+            barSpacing: null,
+            scrollPosition: null
+        };
         
         // Timeframe mappning
         const timeframeMap = {
@@ -291,8 +297,21 @@
             });
         }
 
+        function saveChartState() {
+            if (currentChart) {
+                const timeScale = currentChart.timeScale();
+                
+                // Spara endast zoom-nivå och scroll-position
+                chartState.barSpacing = timeScale.options().barSpacing;
+                chartState.scrollPosition = timeScale.scrollPosition();
+            }
+        }
+        
         async function loadChart() {
             try {
+                // Spara state innan vi laddar ny data
+                saveChartState();
+                
                 // Uppdatera titel
                 document.getElementById('chart-title').textContent = `${currentSymbol} - ${timeframeMap[currentTimeframe]}`;
                 
@@ -357,10 +376,25 @@
                 // Lägg till data (fungerar för både ny och befintlig graf)
                 window.candleSeries.setData(result.data);
                 
-                // Anpassa vyn
-                currentChart.timeScale().fitContent();
+                // Återställ zoom/position om vi har sparat state
+                if (chartState.barSpacing !== null) {
+                    // Applicera samma zoom-nivå
+                    currentChart.timeScale().applyOptions({
+                        barSpacing: chartState.barSpacing
+                    });
+                    
+                    // Om vi har en sparad scroll-position, använd den
+                    if (chartState.scrollPosition !== null) {
+                        setTimeout(() => {
+                            currentChart.timeScale().scrollToPosition(chartState.scrollPosition, false);
+                        }, 0);
+                    }
+                } else {
+                    // Annars, anpassa vyn automatiskt
+                    currentChart.timeScale().fitContent();
+                }
                 
-                console.log(`Laddat ${result.count} ljus för BTCUSDT`);
+                console.log(`Laddat ${result.count} ljus för ${currentSymbol}`);
                 
             } catch (error) {
                 console.error('Fel vid laddning av graf:', error);

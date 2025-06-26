@@ -15,7 +15,7 @@ DB_PASS = 'root'
 DB_NAME = 'smartchart'
 
 DEFAULT_START_TIMESTAMP = int(datetime(2000, 1, 1).timestamp() * 1000)
-MAX_CONCURRENT_REQUESTS = 20
+MAX_CONCURRENT_REQUESTS = 10
 REQUESTS_PER_SECOND = 60  # Antal requests per sekund
 MAX_RETRIES = 5
 RETRY_DELAY = 0.5

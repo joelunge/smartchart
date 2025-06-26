@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartChart - BTCUSDT</title>
+    <title>SmartChart Pro - Klinechart</title>
     <style>
         body {
             margin: 0;
@@ -111,6 +111,11 @@
             font-size: 24px;
             font-weight: 500;
         }
+        .controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
         .timeframe-selector {
             display: flex;
             gap: 8px;
@@ -132,19 +137,43 @@
             background-color: #4a90e2;
             border-color: #4a90e2;
         }
-        #chart {
+        .indicator-selector {
+            display: flex;
+            gap: 8px;
+        }
+        .indicator-btn {
+            background-color: #2a2e39;
+            color: #d1d4dc;
+            border: 1px solid #3a3f4b;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .indicator-btn:hover {
+            background-color: #3a3f4b;
+        }
+        .indicator-btn.active {
+            background-color: #26a69a;
+            border-color: #26a69a;
+        }
+        #chart-container {
             flex: 1;
             background-color: #131722;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            position: relative;
         }
         .loading {
-            text-align: center;
-            padding: 50px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             color: #6c7380;
         }
         
-        /* Custom scrollbar - diskret design */
+        /* Custom scrollbar */
         .symbol-list::-webkit-scrollbar {
             width: 4px;
         }
@@ -174,43 +203,540 @@
                 <input type="text" id="symbol-search" placeholder="Search..." class="search-input">
             </div>
             <div class="symbol-list" id="symbol-list">
-                <!-- Symboler laddas här dynamiskt -->
+                <!-- Symbols loaded here dynamically -->
             </div>
         </div>
         <div class="main-content">
             <div class="header">
                 <h1 id="chart-title">BTCUSDT - 1h</h1>
-                <div class="timeframe-selector">
-                    <button class="tf-btn" data-tf="1">1m</button>
-                    <button class="tf-btn" data-tf="5">5m</button>
-                    <button class="tf-btn" data-tf="15">15m</button>
-                    <button class="tf-btn active" data-tf="60">1h</button>
-                    <button class="tf-btn" data-tf="240">4h</button>
-                    <button class="tf-btn" data-tf="D">1D</button>
-                    <button class="tf-btn" data-tf="W">1W</button>
+                <div class="controls">
+                    <div class="timeframe-selector">
+                        <button class="tf-btn" data-tf="1">1m</button>
+                        <button class="tf-btn" data-tf="5">5m</button>
+                        <button class="tf-btn" data-tf="15">15m</button>
+                        <button class="tf-btn active" data-tf="60">1h</button>
+                        <button class="tf-btn" data-tf="240">4h</button>
+                        <button class="tf-btn" data-tf="D">1D</button>
+                        <button class="tf-btn" data-tf="W">1W</button>
+                    </div>
+                    <div class="indicator-selector">
+                        <button class="indicator-btn active" data-indicator="CUSTOM_MACD">MACD</button>
+                        <button class="indicator-btn" data-indicator="RSI">RSI</button>
+                        <button class="indicator-btn" data-indicator="VOL">Volume</button>
+                    </div>
                 </div>
             </div>
-            <div id="chart">
-                <div class="loading">Laddar graf...</div>
+            <div id="chart-container">
+                <div class="loading">Loading chart...</div>
             </div>
         </div>
     </div>
 
-    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-    <script>
-        let currentChart = null;
-        let currentSymbol = 'BTCUSDT';
-        let currentTimeframe = '60';
+    <!-- Klinechart -->
+    <script src="https://cdn.jsdelivr.net/npm/klinecharts/dist/klinecharts.min.js"></script>
+    
+    <script type="module">
+        // SmartChart Pro with Klinechart
+        class SmartChartKline {
+            constructor(container) {
+                this.container = container;
+                this.chart = null;
+                this.symbol = 'BTCUSDT';
+                this.timeframe = '60';
+                this.activeIndicators = new Set(['CUSTOM_MACD']);
+                
+                this.init();
+            }
+            
+            init() {
+                // Remove loading text
+                this.container.innerHTML = '';
+                
+                // Create Klinechart with dark theme
+                this.chart = klinecharts.init(this.container);
+                
+                // Set timezone to UTC
+                this.chart.setTimezone('UTC');
+                
+                // Set locale to display UTC correctly
+                this.chart.setLocale('en-US');
+                
+                // Configure dark theme similar to TradingView
+                this.chart.setStyles({
+                    grid: {
+                        show: true,
+                        horizontal: {
+                            show: true,
+                            size: 1,
+                            color: '#2a2e39',
+                            style: 'solid',
+                            dashValue: [2, 2]
+                        },
+                        vertical: {
+                            show: true,
+                            size: 1,
+                            color: '#2a2e39',
+                            style: 'solid',
+                            dashValue: [2, 2]
+                        }
+                    },
+                    candle: {
+                        type: 'candle_solid',
+                        bar: {
+                            upColor: '#26a69a',     // TradingView green
+                            downColor: '#ef5350',   // TradingView red
+                            upBorderColor: '#26a69a',
+                            downBorderColor: '#ef5350',
+                            upWickColor: '#26a69a',
+                            downWickColor: '#ef5350',
+                            noChangeColor: '#888888',
+                            noChangeBorderColor: '#888888',
+                            noChangeWickColor: '#888888'
+                        },
+                        priceMark: {
+                            show: true,
+                            high: {
+                                show: false
+                            },
+                            low: {
+                                show: false
+                            },
+                            last: {
+                                show: true,
+                                upColor: '#26a69a',
+                                downColor: '#ef5350',
+                                noChangeColor: '#888888',
+                                line: {
+                                    show: true,
+                                    style: 'dash',
+                                    dashValue: [4, 4],
+                                    size: 1
+                                },
+                                text: {
+                                    show: true,
+                                    size: 12,
+                                    paddingLeft: 2,
+                                    paddingTop: 2,
+                                    paddingRight: 2,
+                                    paddingBottom: 2,
+                                    color: '#FFFFFF',
+                                    family: 'Helvetica Neue',
+                                    weight: 'normal',
+                                    borderRadius: 2
+                                }
+                            }
+                        },
+                        tooltip: {
+                            showRule: 'always',
+                            showType: 'standard',
+                            labels: ['Time', 'Open', 'Close', 'High', 'Low', 'Volume'],
+                            values: null,
+                            defaultValue: 'n/a',
+                            rect: {
+                                paddingLeft: 0,
+                                paddingRight: 0,
+                                paddingTop: 0,
+                                paddingBottom: 6,
+                                offsetLeft: 8,
+                                offsetTop: 8,
+                                offsetRight: 8,
+                                borderRadius: 4,
+                                borderSize: 1,
+                                borderColor: '#2a2e39',
+                                backgroundColor: 'rgba(19, 23, 34, 0.9)'
+                            },
+                            text: {
+                                size: 12,
+                                family: 'Helvetica Neue',
+                                weight: 'normal',
+                                color: '#D9D9D9',
+                                marginLeft: 8,
+                                marginTop: 6,
+                                marginRight: 8,
+                                marginBottom: 0
+                            }
+                        }
+                    },
+                    indicator: {
+                        bars: [{
+                            style: 'fill',
+                            borderStyle: 'solid', 
+                            borderSize: 1,
+                            borderColor: 'transparent',
+                            upColor: '#26a69a',    // Green for positive values
+                            downColor: '#ef5350',  // Red for negative values
+                            noChangeColor: '#888888'
+                        }],
+                        lines: [
+                            { color: '#2962FF', size: 1 },  // MACD line
+                            { color: '#FF6D00', size: 1 }   // Signal line
+                        ],
+                        tooltip: {
+                            showRule: 'always',
+                            showType: 'standard',
+                            showName: true,
+                            showParams: true,
+                            defaultValue: 'n/a',
+                            text: {
+                                size: 12,
+                                family: 'Helvetica Neue',
+                                weight: 'normal',
+                                color: '#D9D9D9',
+                                marginTop: 6,
+                                marginRight: 8,
+                                marginBottom: 0,
+                                marginLeft: 8
+                            }
+                        }
+                    },
+                    xAxis: {
+                        show: true,
+                        height: null,
+                        axisLine: {
+                            show: true,
+                            color: '#2a2e39',
+                            size: 1
+                        },
+                        tickText: {
+                            show: true,
+                            color: '#6c7380',
+                            family: 'Helvetica Neue',
+                            weight: 'normal',
+                            size: 12,
+                            marginStart: 4,
+                            marginEnd: 4
+                        },
+                        tickLine: {
+                            show: true,
+                            size: 1,
+                            length: 3,
+                            color: '#2a2e39'
+                        }
+                    },
+                    yAxis: {
+                        show: true,
+                        width: null,
+                        position: 'right',
+                        type: 'normal',
+                        inside: false,
+                        reverse: false,
+                        axisLine: {
+                            show: true,
+                            color: '#2a2e39',
+                            size: 1
+                        },
+                        tickText: {
+                            show: true,
+                            color: '#6c7380',
+                            family: 'Helvetica Neue',
+                            weight: 'normal',
+                            size: 12,
+                            marginStart: 4,
+                            marginEnd: 4
+                        },
+                        tickLine: {
+                            show: true,
+                            size: 1,
+                            length: 3,
+                            color: '#2a2e39'
+                        }
+                    },
+                    separator: {
+                        size: 1,
+                        color: '#2a2e39',
+                        fill: true,
+                        activeBackgroundColor: 'rgba(33, 150, 243, 0.08)'
+                    },
+                    crosshair: {
+                        show: true,
+                        horizontal: {
+                            show: true,
+                            line: {
+                                show: true,
+                                style: 'dash',
+                                dashValue: [4, 2],
+                                size: 1,
+                                color: '#888888'
+                            },
+                            text: {
+                                show: true,
+                                color: '#D9D9D9',
+                                size: 12,
+                                family: 'Helvetica Neue',
+                                weight: 'normal',
+                                paddingLeft: 2,
+                                paddingRight: 2,
+                                paddingTop: 2,
+                                paddingBottom: 2,
+                                borderSize: 1,
+                                borderColor: '#505050',
+                                borderRadius: 2,
+                                backgroundColor: '#505050'
+                            }
+                        },
+                        vertical: {
+                            show: true,
+                            line: {
+                                show: true,
+                                style: 'dash',
+                                dashValue: [4, 2],
+                                size: 1,
+                                color: '#888888'
+                            },
+                            text: {
+                                show: true,
+                                color: '#D9D9D9',
+                                size: 12,
+                                family: 'Helvetica Neue',
+                                weight: 'normal',
+                                paddingLeft: 2,
+                                paddingRight: 2,
+                                paddingTop: 2,
+                                paddingBottom: 2,
+                                borderSize: 1,
+                                borderColor: '#505050',
+                                borderRadius: 2,
+                                backgroundColor: '#505050'
+                            }
+                        }
+                    }
+                });
+                
+                // Register our custom MACD indicator
+                this.registerCustomMACD();
+                
+                // Use our custom MACD
+                this.chart.createIndicator('CUSTOM_MACD', false);
+            }
+            
+            registerCustomMACD() {
+                // Register our custom MACD indicator
+                klinecharts.registerIndicator({
+                    name: 'CUSTOM_MACD',
+                    shortName: 'MACD (Custom)',
+                    precision: 1,
+                    calcParams: [12, 26, 9],
+                    figures: [
+                        { key: 'macd', title: 'MACD: ', type: 'line' },
+                        { key: 'signal', title: 'Signal: ', type: 'line' }, 
+                        { 
+                            key: 'histogram', 
+                            title: 'Histogram: ', 
+                            type: 'bar',
+                            baseValue: 0,
+                            styles: (data, indicator, defaultStyles) => {
+                                const current = data?.current?.indicatorData?.histogram || 0;
+                                const prev = data?.prev?.indicatorData?.histogram || 0;
+                                
+                                let color;
+                                if (current >= 0) {
+                                    // Positive histogram
+                                    if (current > prev) {
+                                        color = '#26a69a'; // TradingView darker green - increasing
+                                    } else {
+                                        color = '#b2dfdb'; // TradingView lighter green - decreasing
+                                    }
+                                } else {
+                                    // Negative histogram
+                                    if (current < prev) {
+                                        color = '#ff5252'; // TradingView darker red - increasing (more negative)
+                                    } else {
+                                        color = '#ffcdd2'; // TradingView lighter red - decreasing (less negative)
+                                    }
+                                }
+                                
+                                return { 
+                                    color: color,
+                                    upColor: color,
+                                    downColor: color,
+                                    noChangeColor: '#888888'
+                                };
+                            }
+                        }
+                    ],
+                    // Global styles for the entire indicator
+                    styles: {
+                        lines: [
+                            { color: '#2962FF' },  // MACD line
+                            { color: '#FF6D00' }   // Signal line
+                        ],
+                        bars: [{
+                            upColor: '#26a69a',     // Green for positive
+                            downColor: '#ef5350',   // Red for negative
+                            noChangeColor: '#888888'
+                        }]
+                    },
+                    // Implement the same MACD calculation as in indicators.py
+                    calc: (dataList, indicator) => {
+                        const params = indicator.calcParams;
+                        const fastPeriod = params[0];
+                        const slowPeriod = params[1];
+                        const signalPeriod = params[2];
+                        
+                        return dataList.map((kline, index) => {
+                            if (index < slowPeriod - 1) {
+                                return {};
+                            }
+                            
+                            // Get closing prices
+                            const closes = [];
+                            for (let i = 0; i <= index; i++) {
+                                closes.push(dataList[i].close);
+                            }
+                            
+                            // Calculate EMA
+                            const calculateEMA = (prices, period) => {
+                                if (prices.length < period) return null;
+                                
+                                // First EMA is SMA
+                                let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+                                const multiplier = 2 / (period + 1);
+                                
+                                // Calculate EMA for the rest
+                                for (let i = period; i < prices.length; i++) {
+                                    ema = (prices[i] - ema) * multiplier + ema;
+                                }
+                                
+                                return ema;
+                            };
+                            
+                            // Calculate MACD
+                            const emaFast = calculateEMA(closes, fastPeriod);
+                            const emaSlow = calculateEMA(closes, slowPeriod);
+                            
+                            if (emaFast === null || emaSlow === null) {
+                                return {};
+                            }
+                            
+                            const macdValue = emaFast - emaSlow;
+                            
+                            // Calculate Signal (EMA of MACD)
+                            // Collect all MACD values up to this point
+                            const macdValues = [];
+                            for (let i = slowPeriod - 1; i <= index; i++) {
+                                const prevCloses = dataList.slice(0, i + 1).map(d => d.close);
+                                const prevEmaFast = calculateEMA(prevCloses, fastPeriod);
+                                const prevEmaSlow = calculateEMA(prevCloses, slowPeriod);
+                                if (prevEmaFast !== null && prevEmaSlow !== null) {
+                                    macdValues.push(prevEmaFast - prevEmaSlow);
+                                }
+                            }
+                            
+                            const signalValue = calculateEMA(macdValues, signalPeriod);
+                            
+                            if (signalValue === null) {
+                                return { 
+                                    macd: macdValue,
+                                    signal: null,
+                                    histogram: null
+                                };
+                            }
+                            
+                            const histogram = macdValue - signalValue;
+                            
+                            return {
+                                macd: macdValue,
+                                signal: signalValue,
+                                histogram: histogram
+                            };
+                        });
+                    }
+                });
+            }
+            
+            async loadData() {
+                try {
+                    const response = await fetch(`http://localhost:8000/api/candles/${this.symbol}?timeframe=${this.timeframe}&limit=1000`);
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Could not fetch data');
+                    }
+                    
+                    // Format data for Klinechart
+                    const klineData = result.data.map(candle => ({
+                        timestamp: candle.time * 1000,
+                        open: candle.open,
+                        high: candle.high,
+                        low: candle.low,
+                        close: candle.close,
+                        volume: candle.volume
+                    }));
+                    
+                    // Update chart data
+                    this.chart.applyNewData(klineData);
+                    
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                }
+            }
+            
+            toggleIndicator(indicatorName) {
+                // Special handling for different indicators
+                if (indicatorName === 'VOL') {
+                    // Volume should be in the main panel
+                    const indicators = this.chart.getIndicatorByPaneId('candle_pane');
+                    const hasVolume = indicators.some(ind => ind.name === 'VOL');
+                    
+                    if (hasVolume) {
+                        const indicator = indicators.find(ind => ind.name === 'VOL');
+                        if (indicator) {
+                            this.chart.removeIndicator('candle_pane', indicator.name);
+                            this.activeIndicators.delete('VOL');
+                        }
+                    } else {
+                        this.chart.createIndicator('VOL', false, { id: 'candle_pane' });
+                        this.activeIndicators.add('VOL');
+                    }
+                } else {
+                    // MACD and RSI should be in separate panels
+                    const panes = this.chart.getPanes();
+                    let indicatorFound = false;
+                    let indicatorPaneId = null;
+                    
+                    // Search for the indicator in all panels
+                    for (const pane of panes) {
+                        const indicators = this.chart.getIndicatorByPaneId(pane.id);
+                        const indicator = indicators.find(ind => ind.name === indicatorName);
+                        if (indicator) {
+                            indicatorFound = true;
+                            indicatorPaneId = pane.id;
+                            break;
+                        }
+                    }
+                    
+                    if (indicatorFound && indicatorPaneId) {
+                        // Remove indicator and its panel if it's the only indicator
+                        this.chart.removeIndicator(indicatorPaneId, indicatorName);
+                        this.activeIndicators.delete(indicatorName);
+                    } else {
+                        // Create indicator in new panel
+                        this.chart.createIndicator(indicatorName, false);
+                        this.activeIndicators.add(indicatorName);
+                    }
+                }
+            }
+            
+            async changeSymbol(symbol) {
+                this.symbol = symbol;
+                await this.loadData();
+            }
+            
+            async changeTimeframe(timeframe) {
+                this.timeframe = timeframe;
+                await this.loadData();
+            }
+            
+            resize() {
+                this.chart.resize();
+            }
+        }
         
+        // Global variable
+        let smartChart = null;
         let allSymbols = [];
         
-        // Spara zoom/position state
-        let chartState = {
-            barSpacing: null,
-            scrollPosition: null
-        };
-        
-        // Timeframe mappning
+        // Timeframe mapping
         const timeframeMap = {
             '1': '1m',
             '5': '5m',
@@ -230,7 +756,7 @@
                     allSymbols = result.symbols;
                     renderSymbolList(allSymbols);
                     
-                    // Lägg till sökfunktionalitet
+                    // Search functionality
                     const searchInput = document.getElementById('symbol-search');
                     searchInput.addEventListener('input', (e) => {
                         const searchTerm = e.target.value.toLowerCase();
@@ -241,7 +767,7 @@
                     });
                 }
             } catch (error) {
-                console.error('Fel vid laddning av symboler:', error);
+                console.error('Error loading symbols:', error);
             }
         }
         
@@ -267,7 +793,7 @@
             symbols.forEach(symbolData => {
                 const item = document.createElement('div');
                 item.className = 'symbol-item';
-                if (symbolData.symbol === currentSymbol) {
+                if (symbolData.symbol === smartChart.symbol) {
                     item.classList.add('active');
                 }
                 
@@ -282,145 +808,76 @@
                 `;
                 
                 item.addEventListener('click', () => {
-                    // Ta bort active från alla
+                    // Remove active from all
                     document.querySelectorAll('.symbol-item').forEach(el => 
                         el.classList.remove('active')
                     );
-                    // Lägg till active på denna
+                    // Add active to this
                     item.classList.add('active');
                     
-                    currentSymbol = symbolData.symbol;
-                    loadChart();
+                    // Change symbol
+                    smartChart.changeSymbol(symbolData.symbol);
+                    
+                    // Update title
+                    document.getElementById('chart-title').textContent = 
+                        `${symbolData.symbol} - ${timeframeMap[smartChart.timeframe]}`;
                 });
                 
                 symbolList.appendChild(item);
             });
         }
-
-        function saveChartState() {
-            if (currentChart) {
-                const timeScale = currentChart.timeScale();
-                
-                // Spara endast zoom-nivå och scroll-position
-                chartState.barSpacing = timeScale.options().barSpacing;
-                chartState.scrollPosition = timeScale.scrollPosition();
-            }
-        }
         
-        async function loadChart() {
-            try {
-                // Spara state innan vi laddar ny data
-                saveChartState();
-                
-                // Uppdatera titel
-                document.getElementById('chart-title').textContent = `${currentSymbol} - ${timeframeMap[currentTimeframe]}`;
-                
-                // Visa loading
-                if (!currentChart) {
-                    document.getElementById('chart').innerHTML = '<div class="loading">Laddar graf...</div>';
+        // Init when page loaded
+        window.addEventListener('load', async () => {
+            // Wait a bit to ensure klinecharts loads
+            setTimeout(async () => {
+                // Wait until klinecharts is loaded
+                if (typeof klinecharts === 'undefined') {
+                    console.error('Klinecharts library is not loaded!');
+                    // Try to reload or show error message
+                    document.getElementById('chart-container').innerHTML = 
+                        '<div class="loading">Error: Could not load chart library. Please try reloading the page.</div>';
+                    return;
                 }
-                
-                // Hämta data från API
-                const response = await fetch(`http://localhost:8000/api/candles/${currentSymbol}?timeframe=${currentTimeframe}&limit=20000`);
-                const result = await response.json();
-                
-                if (!result.success) {
-                    throw new Error(result.error || 'Kunde inte hämta data');
-                }
-                
-                // Skapa chart (eller återanvänd befintlig)
-                const chartContainer = document.getElementById('chart');
-                
-                if (!currentChart) {
-                    chartContainer.innerHTML = ''; // Rensa loading text bara första gången
-                    
-                    currentChart = window.LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth,
-                    height: chartContainer.clientHeight,
-                    layout: {
-                        background: { color: '#131722' },
-                        textColor: '#d1d4dc',
-                    },
-                    grid: {
-                        vertLines: { color: '#2a2e39' },
-                        horzLines: { color: '#2a2e39' },
-                    },
-                    crosshair: {
-                        mode: window.LightweightCharts.CrosshairMode.Normal,
-                    },
-                    rightPriceScale: {
-                        borderColor: '#2a2e39',
-                    },
-                    timeScale: {
-                        borderColor: '#2a2e39',
-                        timeVisible: true,
-                        secondsVisible: false,
-                    },
-                    });
-                    
-                    // Skapa candlestick series
-                    window.candleSeries = currentChart.addCandlestickSeries({
-                        upColor: '#26a69a',
-                        downColor: '#ef5350',
-                        borderVisible: false,
-                        wickUpColor: '#26a69a',
-                        wickDownColor: '#ef5350',
-                    });
-                    
-                    // Hantera resize
-                    window.addEventListener('resize', () => {
-                        currentChart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
-                    });
-                }
-                
-                // Lägg till data (fungerar för både ny och befintlig graf)
-                window.candleSeries.setData(result.data);
-                
-                // Återställ zoom/position om vi har sparat state
-                if (chartState.barSpacing !== null) {
-                    // Applicera samma zoom-nivå
-                    currentChart.timeScale().applyOptions({
-                        barSpacing: chartState.barSpacing
-                    });
-                    
-                    // Om vi har en sparad scroll-position, använd den
-                    if (chartState.scrollPosition !== null) {
-                        setTimeout(() => {
-                            currentChart.timeScale().scrollToPosition(chartState.scrollPosition, false);
-                        }, 0);
-                    }
-                } else {
-                    // Annars, anpassa vyn automatiskt
-                    currentChart.timeScale().fitContent();
-                }
-                
-                console.log(`Laddat ${result.count} ljus för ${currentSymbol}`);
-                
-            } catch (error) {
-                console.error('Fel vid laddning av graf:', error);
-                document.getElementById('chart').innerHTML = 
-                    '<div class="loading">Fel: ' + error.message + '</div>';
-            }
-        }
-        
-        // Ladda symboler och chart när sidan laddats
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadSymbols();
-            await loadChart();
             
-            // Lägg till timeframe event listeners
+            // Create chart
+            const container = document.getElementById('chart-container');
+            smartChart = new SmartChartKline(container);
+            
+            // Load symbols and initial data
+            await loadSymbols();
+            await smartChart.loadData();
+            
+            // Timeframe listeners
             document.querySelectorAll('.tf-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    // Ta bort active från alla
+                btn.addEventListener('click', async (e) => {
                     document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
-                    // Lägg till active på denna
                     e.target.classList.add('active');
                     
-                    // Uppdatera timeframe och ladda om
-                    currentTimeframe = e.target.dataset.tf;
-                    loadChart();
+                    const timeframe = e.target.dataset.tf;
+                    await smartChart.changeTimeframe(timeframe);
+                    
+                    document.getElementById('chart-title').textContent = 
+                        `${smartChart.symbol} - ${timeframeMap[timeframe]}`;
                 });
             });
+            
+            // Indicator listeners
+            document.querySelectorAll('.indicator-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.target.classList.toggle('active');
+                    const indicator = e.target.dataset.indicator;
+                    smartChart.toggleIndicator(indicator);
+                });
+            });
+            
+            // Handle resize
+            window.addEventListener('resize', () => {
+                if (smartChart) {
+                    smartChart.resize();
+                }
+            });
+            }, 500); // Wait 500ms
         });
     </script>
 </body>

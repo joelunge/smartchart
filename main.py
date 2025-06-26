@@ -9,10 +9,11 @@ import pandas as pd
 from datetime import datetime
 import json
 import os
+from indicators import calculate_macd
 
 app = FastAPI()
 
-# CORS middleware för att tillåta requests från webbläsaren
+# CORS middleware to allow requests from the browser
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,21 +26,21 @@ app.add_middleware(
 DB_CONFIG = {
     'host': 'localhost',
     'port': 3306,  # Standard MySQL port
-    'database': 'smartchart',  # Ny dedikerad databas
+    'database': 'smartchart',  # Dedicated database
     'user': 'root',
     'password': 'root',
     'charset': 'utf8mb4'
 }
 
 def get_db_connection():
-    """Skapa databaskoppling"""
+    """Create database connection"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 @app.get("/api/candles/{symbol}")
 async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
-    """Hämta candlestick data från rätt tabell baserat på timeframe"""
+    """Fetch candlestick data from the right table based on timeframe"""
     
-    # Mapping av timeframe till tabellnamn
+    # Mapping of timeframe to table name
     timeframe_tables = {
         '1': 'candles1',
         '5': 'candles5',
@@ -50,7 +51,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         'W': 'candlesw'
     }
     
-    # Validera timeframe
+    # Validate timeframe
     if timeframe not in timeframe_tables:
         raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
     
@@ -60,7 +61,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Hämta från rätt tabell
+        # Fetch from the right table
         query = f"""
         SELECT 
             open_time / 1000 as time,
@@ -78,10 +79,10 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         cursor.execute(query, (symbol, limit))
         data = cursor.fetchall()
         
-        # Vänd ordningen (äldsta först för TradingView)
+        # Reverse order (oldest first for charts)
         data = data[::-1]
         
-        # Konvertera till rätt format
+        # Convert to the right format
         formatted_data = []
         for candle in data:
             formatted_data.append({
@@ -96,7 +97,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         cursor.close()
         conn.close()
         
-        # Justera timeframe-visning för D och W
+        # Adjust timeframe display for D and W
         tf_display = timeframe
         if timeframe == 'D':
             tf_display = '1D'
@@ -119,7 +120,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
 
 @app.get("/api/test-db")
 async def test_db():
-    """Testa databaskopplingen"""
+    """Test database connection"""
     try:
         print("Trying to connect to database...")
         conn = get_db_connection()
@@ -137,14 +138,103 @@ async def test_db():
         traceback.print_exc()
         return {"success": False, "error": str(e), "error_type": type(e).__name__}
 
-@app.get("/api/symbols")
-async def get_symbols():
-    """Hämta alla symboler med aktuell ticker data"""
+@app.get("/api/indicators/{indicator}/{symbol}")
+async def get_indicator(indicator: str, symbol: str, timeframe: str = "60", limit: int = 1000):
+    """Fetch indicator data for a symbol"""
+    
+    # Validate timeframe
+    timeframe_tables = {
+        '1': 'candles1',
+        '5': 'candles5',
+        '15': 'candles15',
+        '60': 'candles60',
+        '240': 'candles240',
+        'D': 'candlesd',
+        'W': 'candlesw'
+    }
+    
+    if timeframe not in timeframe_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
+    
+    table_name = timeframe_tables[timeframe]
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Hämta direkt från tickers tabell
+        # Fetch candlestick data
+        query = f"""
+        SELECT 
+            open_time / 1000 as time,
+            close
+        FROM {table_name}
+        WHERE symbol = %s
+        ORDER BY open_time DESC
+        LIMIT %s
+        """
+        
+        cursor.execute(query, (symbol, limit))
+        data = cursor.fetchall()
+        
+        # Reverse order (oldest first)
+        data = data[::-1]
+        
+        # Extract prices
+        times = [int(row['time']) for row in data]
+        prices = [float(row['close']) for row in data]
+        
+        # Calculate indicator
+        if indicator.lower() == 'macd':
+            result = calculate_macd(prices)
+            
+            # Format for charts
+            formatted_data = []
+            for i in range(len(times)):
+                formatted_data.append({
+                    'time': times[i],
+                    'macd': result['macd'][i],
+                    'signal': result['signal'][i],
+                    'histogram': result['histogram'][i]
+                })
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                "success": True,
+                "indicator": "macd",
+                "data": formatted_data,
+                "count": len(formatted_data)
+            }
+        elif indicator.lower() == 'rsi':
+            from indicators import calculate_rsi
+            result = calculate_rsi(prices)
+            
+            # Format for charts (simple array)
+            cursor.close()
+            conn.close()
+            
+            return {
+                "success": True,
+                "indicator": "rsi",
+                "data": result,
+                "count": len(result)
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown indicator: {indicator}")
+            
+    except Exception as e:
+        print(f"Error calculating indicator: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/symbols")
+async def get_symbols():
+    """Fetch all symbols with current ticker data"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Fetch directly from tickers table
         query = """
         SELECT 
             symbol,
@@ -159,7 +249,7 @@ async def get_symbols():
         cursor.execute(query)
         result = cursor.fetchall()
         
-        # Formatera resultatet
+        # Format the result
         symbols = []
         for row in result:
             symbols.append({
@@ -184,13 +274,10 @@ async def get_symbols():
         print(f"General error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Root endpoint för index.html
+# Root endpoint for index.html
 @app.get("/")
 async def read_root():
     return FileResponse("index.html")
-
-# Servera statiska filer (HTML, CSS, JS) - men inte på root
-# app.mount("/static", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

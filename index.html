@@ -220,8 +220,12 @@
                         <button class="tf-btn" data-tf="W">1W</button>
                     </div>
                     <div class="indicator-selector">
-                        <button class="indicator-btn active" data-indicator="CUSTOM_MACD">MACD</button>
+                        <button class="indicator-btn" data-indicator="MACD_HISTOGRAM">MACD 1m</button>
+                        <button class="indicator-btn" data-indicator="MACD_STANDARD">MACD Full</button>
+                        <button class="indicator-btn" data-indicator="MACD_BOTH">Both MACDs</button>
+                        <button class="indicator-btn active" data-indicator="EMA">EMA 50/200</button>
                         <button class="indicator-btn" data-indicator="RSI">RSI</button>
+                        <button class="indicator-btn" data-indicator="VOLATILITY">Volatility</button>
                         <button class="indicator-btn" data-indicator="VOL">Volume</button>
                     </div>
                 </div>
@@ -243,7 +247,9 @@
                 this.chart = null;
                 this.symbol = 'BTCUSDT';
                 this.timeframe = '60';
-                this.activeIndicators = new Set(['CUSTOM_MACD']);
+                this.indicatorData = {}; // Store backend-calculated indicator data
+                this.activeIndicators = new Set(['EMA']);
+                this.oneMinuteMACDValues = {}; // Store pre-calculated 1-minute MACD values
                 
                 this.init();
             }
@@ -502,19 +508,164 @@
                     }
                 });
                 
-                // Register our custom MACD indicator
+                // Register our custom MACD indicators
                 this.registerCustomMACD();
                 
-                // Use our custom MACD
-                this.chart.createIndicator('CUSTOM_MACD', false);
+                // Add EMA indicators to main chart
+                this.addEMAs();
             }
             
             registerCustomMACD() {
-                // Register our custom MACD indicator
+                // Register MACD with 1-minute timeframe (histogram only)
+                const self = this;
                 klinecharts.registerIndicator({
-                    name: 'CUSTOM_MACD',
-                    shortName: 'MACD (Custom)',
-                    precision: 1,
+                    name: 'MACD_HISTOGRAM',
+                    shortName: 'MACD 1m Histogram',
+                    precision: 8, // Increased precision for small values
+                    calcParams: [12, 26, 9],
+                    figures: [
+                        { key: 'macd', title: '', type: 'line' },
+                        { key: 'signal', title: '', type: 'line' }, 
+                        { 
+                            key: 'histogram', 
+                            title: 'Histogram: ', 
+                            type: 'bar',
+                            baseValue: 0,
+                            styles: (data, indicator, defaultStyles) => {
+                                const current = data?.current?.indicatorData?.histogram || 0;
+                                const prev = data?.prev?.indicatorData?.histogram || 0;
+                                
+                                let color;
+                                if (current >= 0) {
+                                    // Positive histogram
+                                    if (current > prev) {
+                                        color = '#26a69a'; // TradingView darker green - increasing
+                                    } else {
+                                        color = '#b2dfdb'; // TradingView lighter green - decreasing
+                                    }
+                                } else {
+                                    // Negative histogram
+                                    if (current < prev) {
+                                        color = '#ff5252'; // TradingView darker red - increasing (more negative)
+                                    } else {
+                                        color = '#ffcdd2'; // TradingView lighter red - decreasing (less negative)
+                                    }
+                                }
+                                
+                                return { 
+                                    color: color,
+                                    upColor: color,
+                                    downColor: color,
+                                    noChangeColor: '#888888'
+                                };
+                            }
+                        }
+                    ],
+                    // Global styles for the entire indicator - Hide lines
+                    styles: {
+                        lines: [
+                            { color: 'transparent', size: 0 },  // MACD line - Hidden
+                            { color: 'transparent', size: 0 }   // Signal line - Hidden
+                        ],
+                        bars: [{
+                            upColor: '#26a69a',     // Green for positive
+                            downColor: '#ef5350',   // Red for negative
+                            noChangeColor: '#888888'
+                        }]
+                    },
+                    // Use pre-calculated 1-minute MACD values
+                    calc: (dataList, indicator) => {
+                        return dataList.map((kline, index) => {
+                            // Get the timestamp of this candle (open time)
+                            const timestamp = kline.timestamp;
+                            
+                            // Find the last 1-minute MACD value within this candle's timeframe
+                            let histogramValue = 0;
+                            
+                            if (self.oneMinuteMACDValues) {
+                                // Calculate candle duration in milliseconds
+                                const candleDuration = self.timeframe === 'D' ? 86400000 : 
+                                                     self.timeframe === 'W' ? 604800000 : 
+                                                     parseInt(self.timeframe) * 60000;
+                                
+                                // This candle covers the time range from timestamp to timestamp + candleDuration
+                                const startTime = timestamp;
+                                const endTime = timestamp + candleDuration;
+                                
+                                // Get all timestamps and sort them
+                                const allTimestamps = Object.keys(self.oneMinuteMACDValues)
+                                    .map(ts => parseInt(ts))
+                                    .sort((a, b) => a - b);
+                                
+                                // Find all 1-minute timestamps within this candle's range
+                                // We want timestamps >= startTime and < endTime
+                                const timestampsInRange = allTimestamps.filter(ts => ts >= startTime && ts < endTime);
+                                
+                                if (timestampsInRange.length > 0) {
+                                    // Find the timestamp with the largest absolute histogram value
+                                    let largestAbsValue = 0;
+                                    let largestTimestamp = timestampsInRange[0];
+                                    let largestActualValue = 0;
+                                    
+                                    timestampsInRange.forEach(ts => {
+                                        const value = self.oneMinuteMACDValues[ts];
+                                        const absValue = Math.abs(value);
+                                        if (absValue > largestAbsValue) {
+                                            largestAbsValue = absValue;
+                                            largestTimestamp = ts;
+                                            largestActualValue = value;
+                                        }
+                                    });
+                                    
+                                    histogramValue = largestActualValue;
+                                    
+                                    // Debug logging for verification
+                                    if (index < 5) { // Only log first few candles
+                                        const startDate = new Date(startTime);
+                                        const endDate = new Date(endTime);
+                                        const largestDate = new Date(largestTimestamp);
+                                        console.log(`Candle ${startDate.toISOString()} to ${endDate.toISOString()}: Using largest 1m value from ${largestDate.toISOString()} = ${histogramValue} (abs: ${largestAbsValue})`);
+                                    }
+                                }
+                            }
+                            
+                            return {
+                                macd: 0,
+                                signal: 0,
+                                histogram: histogramValue
+                            };
+                        });
+                    }
+                });
+                
+                // Register our custom Volatility indicator - now uses backend data
+                klinecharts.registerIndicator({
+                    name: 'VOLATILITY',
+                    shortName: 'Volatility',
+                    precision: 2,
+                    calcParams: [200],
+                    figures: [
+                        { key: 'volatility', title: 'Volatility: ', type: 'line' }
+                    ],
+                    styles: {
+                        lines: [
+                            { color: '#9C27B0', size: 2 }  // Purple color
+                        ]
+                    },
+                    calc: (dataList, indicator) => {
+                        // Use pre-calculated volatility data from backend
+                        return dataList.map((kline, index) => {
+                            const volatilityValue = self.indicatorData?.volatility?.[index];
+                            return { volatility: volatilityValue || null };
+                        });
+                    }
+                });
+                
+                // Register MACD with standard settings (12, 26, 9) - now uses backend data
+                klinecharts.registerIndicator({
+                    name: 'MACD_STANDARD',
+                    shortName: 'MACD Standard (12,26,9)',
+                    precision: 8, // Increased precision for small values
                     calcParams: [12, 26, 9],
                     figures: [
                         { key: 'macd', title: 'MACD: ', type: 'line' },
@@ -566,92 +717,123 @@
                             noChangeColor: '#888888'
                         }]
                     },
-                    // Implement the same MACD calculation as in indicators.py
+                    // Use backend calculated MACD data
                     calc: (dataList, indicator) => {
-                        const params = indicator.calcParams;
-                        const fastPeriod = params[0];
-                        const slowPeriod = params[1];
-                        const signalPeriod = params[2];
-                        
                         return dataList.map((kline, index) => {
-                            if (index < slowPeriod - 1) {
-                                return {};
-                            }
-                            
-                            // Get closing prices
-                            const closes = [];
-                            for (let i = 0; i <= index; i++) {
-                                closes.push(dataList[i].close);
-                            }
-                            
-                            // Calculate EMA
-                            const calculateEMA = (prices, period) => {
-                                if (prices.length < period) return null;
-                                
-                                // First EMA is SMA
-                                let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-                                const multiplier = 2 / (period + 1);
-                                
-                                // Calculate EMA for the rest
-                                for (let i = period; i < prices.length; i++) {
-                                    ema = (prices[i] - ema) * multiplier + ema;
-                                }
-                                
-                                return ema;
-                            };
-                            
-                            // Calculate MACD
-                            const emaFast = calculateEMA(closes, fastPeriod);
-                            const emaSlow = calculateEMA(closes, slowPeriod);
-                            
-                            if (emaFast === null || emaSlow === null) {
-                                return {};
-                            }
-                            
-                            const macdValue = emaFast - emaSlow;
-                            
-                            // Calculate Signal (EMA of MACD)
-                            // Collect all MACD values up to this point
-                            const macdValues = [];
-                            for (let i = slowPeriod - 1; i <= index; i++) {
-                                const prevCloses = dataList.slice(0, i + 1).map(d => d.close);
-                                const prevEmaFast = calculateEMA(prevCloses, fastPeriod);
-                                const prevEmaSlow = calculateEMA(prevCloses, slowPeriod);
-                                if (prevEmaFast !== null && prevEmaSlow !== null) {
-                                    macdValues.push(prevEmaFast - prevEmaSlow);
-                                }
-                            }
-                            
-                            const signalValue = calculateEMA(macdValues, signalPeriod);
-                            
-                            if (signalValue === null) {
-                                return { 
-                                    macd: macdValue,
-                                    signal: null,
-                                    histogram: null
-                                };
-                            }
-                            
-                            const histogram = macdValue - signalValue;
+                            const macdValue = self.indicatorData?.macd?.macd?.[index];
+                            const signalValue = self.indicatorData?.macd?.signal?.[index];
+                            const histogramValue = self.indicatorData?.macd?.histogram?.[index];
                             
                             return {
-                                macd: macdValue,
-                                signal: signalValue,
-                                histogram: histogram
+                                macd: macdValue || null,
+                                signal: signalValue || null,
+                                histogram: histogramValue || null
                             };
                         });
                     }
                 });
             }
             
+            addEMAs() {
+                const self = this;
+                // Create custom EMA indicator with 2 lines - now uses backend data
+                klinecharts.registerIndicator({
+                    name: 'DUAL_EMA',
+                    shortName: 'EMA 50/200',
+                    precision: 2,
+                    calcParams: [50, 200],
+                    figures: [
+                        { key: 'ema50', title: 'EMA50: ', type: 'line' },
+                        { key: 'ema200', title: 'EMA200: ', type: 'line' }
+                    ],
+                    styles: {
+                        lines: [
+                            { color: '#FFEB3B', size: 2 },  // Yellow for EMA50
+                            { color: '#4CAF50', size: 2 }   // Green for EMA200
+                        ]
+                    },
+                    calc: (dataList, indicator) => {
+                        // Use pre-calculated EMA data from backend
+                        return dataList.map((kline, index) => {
+                            const ema50Value = self.indicatorData?.dual_ema?.ema50?.[index];
+                            const ema200Value = self.indicatorData?.dual_ema?.ema200?.[index];
+                            
+                            return {
+                                ema50: ema50Value || null,
+                                ema200: ema200Value || null
+                            };
+                        });
+                    }
+                });
+                
+                // Create the dual EMA indicator in the main pane
+                this.chart.createIndicator('DUAL_EMA', false, { id: 'candle_pane' });
+            }
+            
+            async loadOneMinuteMACDData() {
+                try {
+                    // Calculate how many 1-minute candles we need based on current timeframe
+                    // We want to cover the same time range as the main chart
+                    const mainLimit = 1000; // Same as main chart
+                    let minutesNeeded;
+                    
+                    if (this.timeframe === 'D') {
+                        minutesNeeded = mainLimit * 1440; // 1440 minutes per day
+                    } else if (this.timeframe === 'W') {
+                        minutesNeeded = mainLimit * 10080; // 10080 minutes per week
+                    } else {
+                        minutesNeeded = mainLimit * parseInt(this.timeframe); // Convert timeframe to minutes
+                    }
+                    
+                    // Limit to a reasonable maximum to avoid overloading
+                    const limit = Math.min(minutesNeeded, 20000);
+                    
+                    console.log(`Loading ${limit} 1-minute candles to cover ${mainLimit} ${this.timeframe} candles`);
+                    
+                    // Fetch 1-minute MACD data from server
+                    const response = await fetch(`http://localhost:8000/api/indicators/macd/${this.symbol}?timeframe=1&limit=${limit}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Convert to a map for easy lookup by timestamp
+                        this.oneMinuteMACDValues = {};
+                        result.data.forEach(item => {
+                            if (item.histogram !== null) {
+                                // Store timestamp in milliseconds as key
+                                this.oneMinuteMACDValues[item.time * 1000] = item.histogram;
+                            }
+                        });
+                        console.log('Loaded 1-minute MACD data:', Object.keys(this.oneMinuteMACDValues).length, 'values');
+                        
+                        // Log time range covered
+                        const timestamps = Object.keys(this.oneMinuteMACDValues).map(ts => parseInt(ts)).sort((a, b) => a - b);
+                        if (timestamps.length > 0) {
+                            const firstDate = new Date(timestamps[0]);
+                            const lastDate = new Date(timestamps[timestamps.length - 1]);
+                            console.log(`1-minute MACD data covers: ${firstDate.toISOString()} to ${lastDate.toISOString()}`);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading 1-minute MACD data:', error);
+                }
+            }
+            
             async loadData() {
                 try {
-                    const response = await fetch(`http://localhost:8000/api/candles/${this.symbol}?timeframe=${this.timeframe}&limit=1000`);
+                    // Load main timeframe data with indicators
+                    const mainLimit = 1000;
+                    const response = await fetch(`http://localhost:8000/api/candles/${this.symbol}?timeframe=${this.timeframe}&limit=${mainLimit}&include_indicators=true`);
                     const result = await response.json();
                     
                     if (!result.success) {
                         throw new Error(result.error || 'Could not fetch data');
                     }
+                    
+                    // Store indicator data for use in indicator calculations
+                    this.indicatorData = result.indicators || {};
+                    
+                    // Also load 1-minute MACD data
+                    await this.loadOneMinuteMACDData();
                     
                     // Format data for Klinechart
                     const klineData = result.data.map(candle => ({
@@ -673,7 +855,41 @@
             
             toggleIndicator(indicatorName) {
                 // Special handling for different indicators
-                if (indicatorName === 'VOL') {
+                if (indicatorName === 'MACD_BOTH') {
+                    // Toggle both MACD indicators
+                    const hasHistogram = this.activeIndicators.has('MACD_HISTOGRAM');
+                    const hasStandard = this.activeIndicators.has('MACD_STANDARD');
+                    
+                    if (hasHistogram && hasStandard) {
+                        // If both are active, remove both
+                        this.toggleIndicator('MACD_HISTOGRAM');
+                        this.toggleIndicator('MACD_STANDARD');
+                    } else {
+                        // Otherwise, add both
+                        if (!hasHistogram) this.toggleIndicator('MACD_HISTOGRAM');
+                        if (!hasStandard) this.toggleIndicator('MACD_STANDARD');
+                    }
+                    return;
+                } else if (indicatorName === 'EMA') {
+                    // Toggle the dual EMA indicator
+                    try {
+                        const indicators = this.chart.getIndicatorByPaneId('candle_pane');
+                        const hasDualEMA = indicators && indicators.some(ind => ind.name === 'DUAL_EMA');
+                        
+                        if (hasDualEMA) {
+                            // Remove the dual EMA indicator
+                            this.chart.removeIndicator('candle_pane', 'DUAL_EMA');
+                            this.activeIndicators.delete('EMA');
+                        } else {
+                            // Add the dual EMA indicator
+                            this.addEMAs();
+                            this.activeIndicators.add('EMA');
+                        }
+                    } catch (e) {
+                        console.error('Error toggling EMA:', e);
+                    }
+                    return;
+                } else if (indicatorName === 'VOL') {
                     // Volume should be in the main panel
                     const indicators = this.chart.getIndicatorByPaneId('candle_pane');
                     const hasVolume = indicators.some(ind => ind.name === 'VOL');
@@ -690,29 +906,28 @@
                     }
                 } else {
                     // MACD and RSI should be in separate panels
-                    const panes = this.chart.getPanes();
-                    let indicatorFound = false;
-                    let indicatorPaneId = null;
-                    
-                    // Search for the indicator in all panels
-                    for (const pane of panes) {
-                        const indicators = this.chart.getIndicatorByPaneId(pane.id);
-                        const indicator = indicators.find(ind => ind.name === indicatorName);
-                        if (indicator) {
-                            indicatorFound = true;
-                            indicatorPaneId = pane.id;
-                            break;
+                    // Simple toggle - Klinechart handles panel management automatically
+                    if (this.activeIndicators.has(indicatorName)) {
+                        // Remove the indicator
+                        // We need to find which pane it's in
+                        try {
+                            // Try to remove from all possible panes
+                            const removed = this.chart.removeIndicator(indicatorName);
+                            if (removed) {
+                                this.activeIndicators.delete(indicatorName);
+                            }
+                        } catch (e) {
+                            console.error('Error removing indicator:', e);
+                            this.activeIndicators.delete(indicatorName);
                         }
-                    }
-                    
-                    if (indicatorFound && indicatorPaneId) {
-                        // Remove indicator and its panel if it's the only indicator
-                        this.chart.removeIndicator(indicatorPaneId, indicatorName);
-                        this.activeIndicators.delete(indicatorName);
                     } else {
-                        // Create indicator in new panel
-                        this.chart.createIndicator(indicatorName, false);
-                        this.activeIndicators.add(indicatorName);
+                        // Add the indicator
+                        try {
+                            this.chart.createIndicator(indicatorName, false);
+                            this.activeIndicators.add(indicatorName);
+                        } catch (e) {
+                            console.error('Error creating indicator:', e);
+                        }
                     }
                 }
             }
@@ -865,8 +1080,43 @@
             // Indicator listeners
             document.querySelectorAll('.indicator-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    e.target.classList.toggle('active');
                     const indicator = e.target.dataset.indicator;
+                    
+                    if (indicator === 'MACD_BOTH') {
+                        // Special handling for "Both MACDs" button
+                        const histogramBtn = document.querySelector('[data-indicator="MACD_HISTOGRAM"]');
+                        const standardBtn = document.querySelector('[data-indicator="MACD_STANDARD"]');
+                        const bothActive = histogramBtn.classList.contains('active') && standardBtn.classList.contains('active');
+                        
+                        if (bothActive) {
+                            // If both are active, deactivate all
+                            e.target.classList.remove('active');
+                            histogramBtn.classList.remove('active');
+                            standardBtn.classList.remove('active');
+                        } else {
+                            // Otherwise, activate all
+                            e.target.classList.add('active');
+                            histogramBtn.classList.add('active');
+                            standardBtn.classList.add('active');
+                        }
+                    } else {
+                        // Normal toggle
+                        e.target.classList.toggle('active');
+                        
+                        // Update "Both MACDs" button state
+                        if (indicator === 'MACD_HISTOGRAM' || indicator === 'MACD_STANDARD') {
+                            const histogramBtn = document.querySelector('[data-indicator="MACD_HISTOGRAM"]');
+                            const standardBtn = document.querySelector('[data-indicator="MACD_STANDARD"]');
+                            const bothBtn = document.querySelector('[data-indicator="MACD_BOTH"]');
+                            
+                            if (histogramBtn.classList.contains('active') && standardBtn.classList.contains('active')) {
+                                bothBtn.classList.add('active');
+                            } else {
+                                bothBtn.classList.remove('active');
+                            }
+                        }
+                    }
+                    
                     smartChart.toggleIndicator(indicator);
                 });
             });

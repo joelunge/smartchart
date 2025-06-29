@@ -1,6 +1,6 @@
 """
-Tekniska indikatorer bibliotek för SmartChart
-Alla indikatorer implementerade från grunden utan externa bibliotek
+Technical indicators library for SmartChart
+All indicators implemented from scratch without external libraries
 """
 
 import numpy as np
@@ -9,25 +9,25 @@ from typing import List, Dict, Tuple, Optional
 
 def calculate_ema(prices: List[float], period: int) -> List[Optional[float]]:
     """
-    Beräkna Exponential Moving Average (EMA)
+    Calculate Exponential Moving Average (EMA)
     
     Args:
-        prices: Lista med priser
-        period: Antal perioder för EMA
+        prices: List of prices
+        period: Number of periods for EMA
         
     Returns:
-        Lista med EMA-värden (None för perioder där EMA inte kan beräknas)
+        List of EMA values (None for periods where EMA cannot be calculated)
     """
     if len(prices) < period:
         return [None] * len(prices)
     
     ema = [None] * (period - 1)
     
-    # Första EMA-värdet är SMA för första perioden
+    # First EMA value is SMA for first period
     sma = sum(prices[:period]) / period
     ema.append(sma)
     
-    # EMA-formel: (Pris - EMA_föregående) * multiplier + EMA_föregående
+    # EMA formula: (Price - Previous_EMA) * multiplier + Previous_EMA
     multiplier = 2 / (period + 1)
     
     for i in range(period, len(prices)):
@@ -205,11 +205,68 @@ def calculate_sma(prices: List[float], period: int) -> List[Optional[float]]:
     return sma
 
 
-# Dictionary för att enkelt komma åt indikatorer
+def calculate_volatility(prices: List[float], period: int = 200) -> List[Optional[float]]:
+    """
+    Calculate custom volatility indicator based on average absolute percentage change
+    
+    Args:
+        prices: List of closing prices
+        period: Number of periods for calculation (default 200)
+        
+    Returns:
+        List of volatility values
+    """
+    if len(prices) < period + 1:
+        return [None] * len(prices)
+    
+    volatility = [None] * period
+    
+    for i in range(period, len(prices)):
+        # Calculate percentage changes for the last 'period' candles
+        percentage_changes = []
+        for j in range(i - period + 1, i + 1):
+            if j > 0 and prices[j-1] > 0:
+                percent_change = ((prices[j] - prices[j-1]) / prices[j-1]) * 100
+                percentage_changes.append(abs(percent_change))  # Use absolute value
+        
+        if percentage_changes:
+            # Calculate average of absolute percentage changes
+            avg_volatility = sum(percentage_changes) / len(percentage_changes)
+            volatility.append(avg_volatility)
+        else:
+            volatility.append(None)
+    
+    return volatility
+
+
+def calculate_dual_ema(prices: List[float], period1: int = 50, period2: int = 200) -> Dict[str, List[Optional[float]]]:
+    """
+    Calculate dual EMA lines (50 and 200 period)
+    
+    Args:
+        prices: List of closing prices
+        period1: First EMA period (default 50)
+        period2: Second EMA period (default 200)
+        
+    Returns:
+        Dictionary with 'ema50' and 'ema200' lists
+    """
+    ema50 = calculate_ema(prices, period1)
+    ema200 = calculate_ema(prices, period2)
+    
+    return {
+        'ema50': ema50,
+        'ema200': ema200
+    }
+
+
+# Dictionary to easily access indicators
 INDICATORS = {
     'macd': calculate_macd,
     'rsi': calculate_rsi,
     'bollinger': calculate_bollinger_bands,
     'sma': calculate_sma,
-    'ema': calculate_ema
+    'ema': calculate_ema,
+    'volatility': calculate_volatility,
+    'dual_ema': calculate_dual_ema
 }

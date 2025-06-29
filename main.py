@@ -9,7 +9,7 @@ import pandas as pd
 from datetime import datetime
 import json
 import os
-from indicators import calculate_macd
+from indicators import calculate_macd, calculate_volatility, calculate_dual_ema, calculate_rsi
 
 app = FastAPI()
 
@@ -37,7 +37,7 @@ def get_db_connection():
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 @app.get("/api/candles/{symbol}")
-async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
+async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000, include_indicators: bool = True):
     """Fetch candlestick data from the right table based on timeframe"""
     
     # Mapping of timeframe to table name
@@ -84,6 +84,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         
         # Convert to the right format
         formatted_data = []
+        closing_prices = []
         for candle in data:
             formatted_data.append({
                 'time': int(candle['time']),
@@ -93,9 +94,29 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
                 'close': float(candle['close']),
                 'volume': float(candle['volume'])
             })
+            closing_prices.append(float(candle['close']))
         
         cursor.close()
         conn.close()
+        
+        # Calculate indicators if requested
+        indicators = {}
+        if include_indicators and len(closing_prices) > 0:
+            # Calculate MACD
+            macd_result = calculate_macd(closing_prices)
+            indicators['macd'] = macd_result
+            
+            # Calculate Volatility
+            volatility_result = calculate_volatility(closing_prices)
+            indicators['volatility'] = volatility_result
+            
+            # Calculate dual EMA
+            dual_ema_result = calculate_dual_ema(closing_prices)
+            indicators['dual_ema'] = dual_ema_result
+            
+            # Calculate RSI
+            rsi_result = calculate_rsi(closing_prices)
+            indicators['rsi'] = rsi_result
         
         # Adjust timeframe display for D and W
         tf_display = timeframe
@@ -109,6 +130,7 @@ async def get_candles(symbol: str, timeframe: str = "60", limit: int = 20000):
         return {
             "success": True,
             "data": formatted_data,
+            "indicators": indicators,
             "count": len(formatted_data),
             "symbol": symbol,
             "timeframe": tf_display
@@ -219,6 +241,49 @@ async def get_indicator(indicator: str, symbol: str, timeframe: str = "60", limi
                 "indicator": "rsi",
                 "data": result,
                 "count": len(result)
+            }
+        elif indicator.lower() == 'volatility':
+            from indicators import calculate_volatility
+            result = calculate_volatility(prices)
+            
+            # Format for charts
+            formatted_data = []
+            for i in range(len(times)):
+                formatted_data.append({
+                    'time': times[i],
+                    'volatility': result[i]
+                })
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                "success": True,
+                "indicator": "volatility",
+                "data": formatted_data,
+                "count": len(formatted_data)
+            }
+        elif indicator.lower() == 'dual_ema':
+            from indicators import calculate_dual_ema
+            result = calculate_dual_ema(prices)
+            
+            # Format for charts
+            formatted_data = []
+            for i in range(len(times)):
+                formatted_data.append({
+                    'time': times[i],
+                    'ema50': result['ema50'][i],
+                    'ema200': result['ema200'][i]
+                })
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                "success": True,
+                "indicator": "dual_ema",
+                "data": formatted_data,
+                "count": len(formatted_data)
             }
         else:
             raise HTTPException(status_code=400, detail=f"Unknown indicator: {indicator}")
